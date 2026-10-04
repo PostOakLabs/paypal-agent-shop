@@ -1,0 +1,15 @@
+{
+  "store": "Trailhead Outfitters",
+  "items": [
+    { "id": "sku-001", "title": "Ridgeline 45L Hiking Backpack", "price": 149.00, "category": "packs", "blurb": "Ventilated frame, rain cover included, 1.4 kg." },
+    { "id": "sku-002", "title": "Scree 2P Backpacking Tent", "price": 289.00, "category": "shelter", "blurb": "Two-person, three-season, 2.1 kg trail weight." },
+    { "id": "sku-003", "title": "Nimbus Down Jacket", "price": 199.00, "category": "apparel", "blurb": "650-fill responsibly sourced down, packs into its pocket." },
+    { "id": "sku-004", "title": "Cairn Trail Runners", "price": 129.00, "category": "footwear", "blurb": "Grippy 4mm lugs, rock plate, true to size." },
+    { "id": "sku-005", "title": "Titanium Camp Stove", "price": 59.00, "category": "cookware", "blurb": "Piezo ignition, 80g, simmers without flaring." },
+    { "id": "sku-006", "title": "Merino Hiking Socks (3-pack)", "price": 18.00, "category": "apparel", "blurb": "73% merino, cushioned heel, blister-tested." },
+    { "id": "sku-007", "title": "Fenix Rechargeable Headlamp", "price": 39.90, "category": "gear", "blurb": "600 lumens, red night mode, USB-C." },
+    { "id": "sku-008", "title": "Insulated Titanium Bottle 750ml", "price": 24.50, "category": "cookware", "blurb": "Cold 24h, hot 12h, 148g." },
+    { "id": "sku-009", "title": "Summit Down Sleeping Bag", "price": 119.00, "category": "shelter", "blurb": "Comfort rated to -1°C, half-zip, 1.1 kg." },
+    { "id": "sku-010", "title": "Trailhead First Aid Kit", "price": 34.00, "category": "gear", "blurb": "28 pieces, blister care, CPR mask, 210g." }
+  ]
+}

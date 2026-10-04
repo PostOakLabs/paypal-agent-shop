@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trailhead Outfitters — Avo, your merchant agent</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <div class="brand"><span class="logo">⛰</span> Trailhead Outfitters</div>
+  <div class="badges"><span class="chip agent">Avo · agent</span><span class="chip model" id="model-chip">…</span><span class="chip sandbox">PayPal sandbox</span></div>
+</header>
+<main>
+  <section id="chat" aria-live="polite"></section>
+  <form id="composer">
+    <input id="message" type="text" placeholder="Ask Avo — “I need a tent under $300”" autocomplete="off" autofocus>
+    <button type="submit">Send</button>
+  </form>
+</main>
+<aside>
+  <h2>Catalog</h2>
+  <div id="catalog"></div>
+  <h2>Orders</h2>
+  <div id="order-rail"><p class="muted">No orders yet.</p></div>
+</aside>
+<script src="/app.js"></script>
+</body>
+</html>
