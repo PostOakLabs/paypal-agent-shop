@@ -4,6 +4,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join, extname } from 'node:path';
 import { paypal } from './lib/paypal.js';
 import { agentTurn, orders } from './lib/agent.js';
+import { handleMcp } from './lib/mcp.js';
 
 const PUBLIC = new URL('./public', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
 const MIME = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.json': 'application/json', '.svg': 'image/svg+xml' };
@@ -24,6 +25,7 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const origin = `${url.protocol}//${url.host}`;
   try {
+    if (url.pathname === '/mcp' && req.method === 'POST') return handleMcp(req, res, origin);
     if (url.pathname === '/api/config') {
       return json(res, 200, { clientId: paypal.clientId, env: paypal.env, model: 'glm-5.3-flash', store: 'Trailhead Outfitters' });
     }
