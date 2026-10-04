@@ -32,7 +32,7 @@ async function token() {
   return JSON.parse(body).access_token;
 }
 
-async function createOrder(t) {
+async function createOrder(t, amount = '0.01') {
   const r = await fetch(`${base}/v2/checkout/orders`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
@@ -41,7 +41,7 @@ async function createOrder(t) {
       purchase_units: [
         {
           description: 'Spike order - lifecycle agent day-1 gate',
-          amount: { currency_code: 'USD', value: '11.10' },
+          amount: { currency_code: 'USD', value: amount },
         },
       ],
       // Sandbox-only placeholders; the real app points these at the hosted demo.
@@ -78,10 +78,10 @@ const [cmd, arg] = process.argv.slice(2);
 try {
   const t = await token();
   if (cmd === 'token') console.log('credentials OK, token acquired');
-  else if (cmd === 'create') await createOrder(t);
+  else if (cmd === 'create') await createOrder(t, process.argv[3]);
   else if (cmd === 'capture' && arg) await captureOrder(t, arg);
   else {
-    console.log('usage: node scripts/spike.mjs token | create | capture <ORDER_ID>');
+    console.log('usage: node scripts/spike.mjs token | create [AMOUNT] | capture <ORDER_ID>');
     process.exit(2);
   }
 } catch (e) {
