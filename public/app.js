@@ -4,6 +4,22 @@ const chat = document.getElementById('chat');
 const composer = document.getElementById('composer');
 const input = document.getElementById('message');
 
+// every API call echoes the session id issued by /api/config (§0.2 session binding)
+// and surfaces server errors (400/403/413/429/5xx) as readable bubbles.
+async function api(path, { method = 'GET', body } = {}) {
+  const res = await fetch(path, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(config?.sessionId ? { 'x-session-id': config.sessionId } : {}),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `request failed (${res.status})`);
+  return data;
+}
+
 function bubble(cls, text) {
   const el = document.createElement('div');
   el.className = `bubble ${cls}`;
@@ -32,9 +48,13 @@ function renderOrderCard(ev) {
     window.paypal.Buttons({
       createOrder: () => ev.order_id,
       onApprove: async (data) => {
-        const r = await fetch(`/api/capture/${data.orderID}`, { method: 'POST' }).then((r) => r.json());
-        card.querySelector('.status').outerHTML = statusChip(r.status);
-        bubble('sys', `Payment captured — capture ${r.captureId}. Order ${r.orderId} is ${r.status}.`);
+        try {
+          const r = await api(`/api/capture/${data.orderID}`, { method: 'POST' });
+          card.querySelector('.status').outerHTML = statusChip(r.status);
+          bubble('sys', `Payment captured — capture ${r.captureId}. Order ${r.orderId} is ${r.status}.`);
+        } catch (e) {
+          bubble('sys', `⚠ Capture failed: ${e.message}`);
+        }
         refreshOrderRail();
       },
       onError: (err) => bubble('sys', `PayPal SDK error: ${err}`),
@@ -45,11 +65,15 @@ function renderOrderCard(ev) {
 }
 
 async function refreshOrderRail() {
-  const { orders } = await fetch('/api/orders').then((r) => r.json());
   const rail = document.getElementById('order-rail');
-  rail.innerHTML = orders.length
-    ? orders.map((o) => `<div class="order-rail-item"><span>#${o.n} ${o.item}${o.qty > 1 ? ` ×${o.qty}` : ''}</span><span class="status ${o.status}">${o.status}</span></div>`).join('')
-    : '<p class="muted">No orders yet.</p>';
+  try {
+    const { orders } = await api('/api/orders');
+    rail.innerHTML = orders.length
+      ? orders.map((o) => `<div class="order-rail-item"><span>#${o.n} ${o.item}${o.qty > 1 ? ` ×${o.qty}` : ''}</span><span class="status ${o.status}">${o.status}</span></div>`).join('')
+      : '<p class="muted">No orders yet.</p>';
+  } catch (e) {
+    rail.innerHTML = `<p class="muted">⚠ ${e.message}</p>`;
+  }
 }
 
 async function loadCatalog() {
@@ -63,13 +87,8 @@ async function send(message) {
   const typing = bubble('avo typing', 'Avo is thinking…');
   composer.querySelector('button').disabled = true;
   try {
-    const turn = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message }),
-    }).then((r) => r.json());
+    const turn = await api('/api/chat', { method: 'POST', body: { message } });
     typing.remove();
-    if (turn.error) bubble('avo', `⚠ ${turn.error}`);
     if (turn.reply) bubble('avo', turn.reply);
     for (const ev of turn.events || []) if (ev.type === 'order_created') renderOrderCard(ev);
     refreshOrderRail();
@@ -92,7 +111,12 @@ composer.addEventListener('submit', (e) => {
 });
 
 (async function init() {
-  config = await fetch('/api/config').then((r) => r.json());
+  try {
+    config = await api('/api/config');
+  } catch (e) {
+    bubble('sys', `⚠ Could not reach the store API: ${e.message}`);
+    return;
+  }
   document.getElementById('model-chip').textContent = config.model;
   bubble('sys', `${config.store} · ${config.env} · every payment is fake sandbox money`);
   loadCatalog();

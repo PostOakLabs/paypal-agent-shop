@@ -5,6 +5,7 @@ import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
 import { join, extname } from 'node:path';
+import { Readable } from 'node:stream';
 import { paypal } from './lib/paypal.js';
 import { agentTurn, orders } from './lib/agent.js';
 import { handleMcp } from './lib/mcp.js';
@@ -20,7 +21,9 @@ const env = Object.fromEntries(
     .map((l) => [l.slice(0, l.indexOf('=')).trim(), l.slice(l.indexOf('=') + 1).trim()])
     .filter(([, v]) => v !== '')
 );
-const MCP_TOKEN = env.MCP_TOKEN || '';
+// process env wins (lets the smoke harness inject a test token without touching .env)
+const MCP_TOKEN = process.env.MCP_TOKEN ?? (env.MCP_TOKEN || '');
+const MUTATING_MCP = new Set(['trailhead_create_order', 'trailhead_refund_order']); // §0.3: bearer-gated
 
 // ---- per-session chat state (replaces the process-global history array) ----
 const SESSION_TTL = 30 * 60 * 1000;
@@ -68,12 +71,17 @@ function throttle(key) {
 
 const isAdmin = (req) => Boolean(MCP_TOKEN) && req.headers.authorization === `Bearer ${MCP_TOKEN}`;
 
-async function readBody(req) {
+async function readRaw(req) {
   let raw = '';
   for await (const chunk of req) {
     raw += chunk;
     if (raw.length > BODY_LIMIT) throw Object.assign(new Error('body too large'), { status: 413 });
   }
+  return raw;
+}
+
+async function readBody(req) {
+  const raw = await readRaw(req);
   return raw ? JSON.parse(raw) : {};
 }
 
@@ -82,7 +90,8 @@ function json(res, code, body) {
   res.end(JSON.stringify(body));
 }
 
-const server = createServer(async (req, res) => {
+// exported for scripts/smoke.mjs: ephemeral-port boot (PORT=0) + in-memory order seeding
+export const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const origin = `${url.protocol}//${url.host}`;
   const sid = req.headers['x-session-id'] || null;
@@ -90,7 +99,22 @@ const server = createServer(async (req, res) => {
     if (url.pathname === '/healthz') {
       return json(res, 200, { ok: true, env: paypal.env, version: '0.2.0', uptime: Math.round(process.uptime()) });
     }
-    if (url.pathname === '/mcp' && req.method === 'POST') return handleMcp(req, res, origin, { admin: isAdmin(req) });
+    // §0.3: mutating MCP tools require the admin bearer — enforced here at the front
+    // door (fail-closed: empty MCP_TOKEN refuses everything mutating). Read-only
+    // tools/list + trailhead_search_catalog + trailhead_get_order stay open.
+    if (url.pathname === '/mcp' && req.method === 'POST') {
+      const raw = await readRaw(req);
+      let rpc = {};
+      try { rpc = JSON.parse(raw); } catch { /* malformed body: let handleMcp report the parse error */ }
+      if (rpc?.method === 'tools/call' && MUTATING_MCP.has(rpc?.params?.name) && !isAdmin(req)) {
+        return json(res, 401, {
+          jsonrpc: '2.0',
+          id: rpc.id ?? null,
+          error: { code: -32001, message: `unauthorized: ${rpc.params.name} requires Authorization: Bearer MCP_TOKEN` },
+        });
+      }
+      return handleMcp(Readable.from([raw]), res, origin, { admin: isAdmin(req) });
+    }
 
     if (url.pathname === '/api/config') {
       return json(res, 200, { clientId: paypal.clientId, env: paypal.env, model: 'glm-5.3-flash', store: 'Trailhead Outfitters', sessionId: randomUUID() });
@@ -137,4 +161,4 @@ const server = createServer(async (req, res) => {
 });
 
 const port = Number(process.env.PORT || 8788);
-server.listen(port, () => console.log(`Trailhead Outfitters ready: http://localhost:${port}`));
+server.listen(port, () => console.log(`Trailhead Outfitters ready: http://localhost:${server.address().port}`));
