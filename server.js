@@ -7,8 +7,11 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join, extname } from 'node:path';
 import { Readable } from 'node:stream';
 import { paypal } from './lib/paypal.js';
-import { agentTurn, orders } from './lib/agent.js';
+import { agentTurn, orders, hydrateOrders } from './lib/agent.js';
+import { getStore } from './lib/store.js';
 import { handleMcp } from './lib/mcp.js';
+
+const store = getStore();
 
 const PUBLIC = new URL('./public', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
 const MIME = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.json': 'application/json', '.svg': 'image/svg+xml' };
@@ -26,14 +29,26 @@ const MCP_TOKEN = process.env.MCP_TOKEN ?? (env.MCP_TOKEN || '');
 const MUTATING_MCP = new Set(['trailhead_create_order', 'trailhead_refund_order']); // §0.3: bearer-gated
 
 // ---- per-session chat state (replaces the process-global history array) ----
+// Sessions survive a restart (P1): turns write through to the store seam and
+// hydrate lazily on first access after a miss — same TTL semantics as before
+// (a store row older than SESSION_TTL is expired, not resurrected).
 const SESSION_TTL = 30 * 60 * 1000;
 const SESSION_CAP = 200;
 const sessions = new Map(); // sid -> { turns: [], lastSeen }
 
-function session(sid) {
+async function session(sid) {
   if (!sid) return null;
-  pruneSessions();
+  await pruneSessions();
   let s = sessions.get(sid);
+  if (!s) {
+    const stored = await store.loadSession(sid);
+    if (stored && Date.now() - stored.lastSeen <= SESSION_TTL) {
+      s = { turns: stored.turns, lastSeen: stored.lastSeen };
+      sessions.set(sid, s);
+    } else if (stored) {
+      await store.deleteSession(sid); // expired while nobody was looking
+    }
+  }
   if (!s) {
     s = { turns: [], lastSeen: Date.now() };
     sessions.set(sid, s);
@@ -42,14 +57,20 @@ function session(sid) {
   return s;
 }
 
-function pruneSessions() {
+async function pruneSessions() {
   const now = Date.now();
-  for (const [k, v] of sessions) if (now - v.lastSeen > SESSION_TTL) sessions.delete(k);
+  for (const [k, v] of sessions) {
+    if (now - v.lastSeen > SESSION_TTL) {
+      sessions.delete(k);
+      await store.deleteSession(k); // keep the store mirroring the memory set
+    }
+  }
   while (sessions.size > SESSION_CAP) {
     let oldest = null;
     let t = Infinity;
     for (const [k, v] of sessions) if (v.lastSeen < t) { t = v.lastSeen; oldest = k; }
     sessions.delete(oldest);
+    await store.deleteSession(oldest);
   }
 }
 
@@ -124,9 +145,10 @@ export const server = createServer(async (req, res) => {
       if (!throttle(`chat:${sid}`)) return json(res, 429, { error: 'slow down — too many messages, try again in a few seconds' });
       const { message } = await readBody(req);
       if (!message?.trim()) return json(res, 400, { error: 'empty message' });
-      const s = session(sid);
+      const s = await session(sid);
       const turn = await agentTurn(message, s.turns, origin, sid);
       s.turns.push({ role: 'user', content: message }, { role: 'assistant', content: turn.reply });
+      await store.saveSession(sid, s.turns, s.lastSeen); // restart-safe chat history
       return json(res, 200, turn);
     }
     if (url.pathname.startsWith('/api/capture/') && req.method === 'POST') {
@@ -137,6 +159,12 @@ export const server = createServer(async (req, res) => {
       const out = await paypal.captureOrder(id);
       rec.status = out.status;
       rec.captureId = out.purchase_units?.[0]?.payments?.captures?.[0]?.id ?? null;
+      // write-through (P1): a captured order must survive a restart — status on
+      // the order ledger plus the capture row the dispute/refund paths will read
+      await store.saveOrder(id, rec);
+      if (rec.captureId) {
+        await store.saveCapture({ capture_id: rec.captureId, order_id: id, amount: rec.amount, status: out.status, created_at: new Date().toISOString() });
+      }
       return json(res, 200, { status: out.status, captureId: rec.captureId, orderId: id });
     }
     if (url.pathname === '/api/orders') {
@@ -161,4 +189,5 @@ export const server = createServer(async (req, res) => {
 });
 
 const port = Number(process.env.PORT || 8788);
+await hydrateOrders(); // rebuild the orders Map from the store before answering anything (P1 restart-safety)
 server.listen(port, () => console.log(`Trailhead Outfitters ready: http://localhost:${server.address().port}`));
