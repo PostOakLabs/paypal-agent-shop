@@ -36,6 +36,11 @@ main { grid-area: main; display: flex; flex-direction: column; min-width: 0; }
 .order-card .title { font-weight: 600; }
 .order-card .amount { font-size: 1.2rem; font-weight: 700; }
 .order-card .meta { color: var(--muted); font-size: 0.78rem; }
+/* Pay Later messaging (E3): PayPal's text-layout iframe draws dark text on
+   transparency, so the slot carries the light "offer chip" look; empty until
+   the component renders, removed entirely when messages are unavailable. */
+.order-card .paylater-messages { margin: 0.1rem 0; min-height: 0; }
+.order-card .paylater-messages iframe { border-radius: 8px; background: #f5f7fa; max-width: 100%; }
 .status { font-size: 0.72rem; padding: 0.2rem 0.55rem; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
 .status.COMPLETED { color: var(--good); border-color: var(--good); }
 .status.APPROVED { color: var(--accent); border-color: var(--accent); }

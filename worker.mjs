@@ -155,6 +155,9 @@ export default {
         }
         return json({ status: out.status, captureId: rec.captureId, orderId: id });
       }
+      if (url.pathname === '/api/catalog') {
+        return json(rt.agent.catalog);
+      }
       if (url.pathname === '/api/orders') {
         const list = [...rt.agent.orders.entries()]
           .filter(([, o]) => (admin ? true : o.sid && o.sid === sid))

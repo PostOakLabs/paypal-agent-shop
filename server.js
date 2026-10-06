@@ -176,6 +176,9 @@ export const server = createServer(async (req, res) => {
       }
       return json(res, 200, { status: out.status, captureId: rec.captureId, orderId: id });
     }
+    if (url.pathname === '/api/catalog') {
+      return json(res, 200, catalog);
+    }
     if (url.pathname === '/api/orders') {
       const list = [...orders.entries()]
         .filter(([, o]) => (isAdmin(req) ? true : o.sid && o.sid === sid))

@@ -41,9 +41,25 @@ function renderOrderCard(ev) {
     <div class="row"><span class="title">${ev.item}${ev.qty > 1 ? ` ×${ev.qty}` : ''}</span>
       <span class="amount">US$ ${ev.amount.toFixed(2)}</span></div>
     <div class="row"><span class="meta">order ${ev.order_id} · PayPal sandbox</span>${statusChip('CREATED')}</div>
+    <div class="paylater-messages"></div>
     <div class="buttons"></div>`;
   chat.appendChild(card);
   chat.scrollTop = chat.scrollHeight;
+  // Pay Later messaging (E3): PayPal's merchandising surface — the pay-in-4 /
+  // financing banner with THIS order's amount, rendered above the buttons.
+  // Graceful fallback: if the messages component is unavailable (SDK variant,
+  // region), the slot is removed quietly and the buttons carry the card.
+  if (window.paypal?.Messages) {
+    window.paypal.Messages({
+      amount: ev.amount.toFixed(2),
+      placement: 'product',
+      style: { layout: 'text', logo: { type: 'inline' } },
+    }).render(card.querySelector('.paylater-messages')).catch(() => {
+      card.querySelector('.paylater-messages')?.remove();
+    });
+  } else {
+    card.querySelector('.paylater-messages').remove();
+  }
   if (window.paypal) {
     window.paypal.Buttons({
       createOrder: () => ev.order_id,
@@ -77,7 +93,9 @@ async function refreshOrderRail() {
 }
 
 async function loadCatalog() {
-  const catalog = await fetch('/data/catalog.json').then((r) => r.json());
+  // served by both surfaces (server.js + worker.mjs) — /data/catalog.json was a
+  // 404 on both, the absorbed PAYPAL-P2 finding
+  const catalog = await api('/api/catalog');
   document.getElementById('catalog').innerHTML = catalog.items
     .map((i) => `<div class="item"><span class="p">$${i.price.toFixed(2)}</span><div class="t">${i.title}</div><div class="b">${i.blurb}</div></div>`)
     .join('');
@@ -119,10 +137,13 @@ composer.addEventListener('submit', (e) => {
   }
   document.getElementById('model-chip').textContent = config.model;
   bubble('sys', `${config.store} · ${config.env} · every payment is fake sandbox money`);
-  loadCatalog();
+  loadCatalog().catch((e) => { document.getElementById('catalog').innerHTML = `<p class="muted">⚠ ${e.message}</p>`; });
   refreshOrderRail();
   const sdk = document.createElement('script');
-  sdk.src = `https://www.paypal.com/sdk/js?client-id=${config.clientId}&currency=USD&intent=capture&components=buttons`;
+  // components=messages: Pay Later messaging blocks; enable-funding=venmo: Venmo
+  // in the button wallet (US-only; sandbox may not render it — known quirk, the
+  // PayPal-only fallback is by construction)
+  sdk.src = `https://www.paypal.com/sdk/js?client-id=${config.clientId}&currency=USD&intent=capture&components=buttons,messages&enable-funding=venmo`;
   sdk.onload = () => bubble('sys', 'Avo is on duty — try: “I need a tent under $300”');
   sdk.onerror = () => bubble('sys', '⚠ PayPal SDK failed to load');
   document.head.appendChild(sdk);
