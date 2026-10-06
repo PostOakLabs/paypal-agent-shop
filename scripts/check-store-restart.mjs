@@ -28,8 +28,8 @@ const repoRoot = resolve(dirname(selfPath), '..');
 const REAL_STORE = join(repoRoot, 'lib', 'store.js');
 const KEEP = process.argv.includes('--keep');
 
-// `node:sqlite` is built here from parts so this gate's own source never
-// contains the literal it greps for (it would self-match in check (b)).
+// The sqlite module id is assembled here from parts so this gate's own source
+// never contains the literal it greps for (it would self-match in check (b)).
 const NEEDLE = 'node' + ':sqlite';
 
 const fail = (msg) => { console.error(`RED: ${msg}`); process.exit(1); };
