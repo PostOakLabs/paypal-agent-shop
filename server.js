@@ -6,12 +6,11 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
 import { join, extname } from 'node:path';
 import { Readable } from 'node:stream';
-import { paypal } from './lib/paypal.js';
-import { agentTurn, orders, hydrateOrders } from './lib/agent.js';
-import { getStore } from './lib/store.js';
-import { handleMcp } from './lib/mcp.js';
-
-const store = getStore();
+import { createPaypal } from './lib/paypal.js';
+import { createLlm } from './lib/llm.js';
+import { createAgent } from './lib/agent.js';
+import { createStore } from './lib/store.js';
+import { createNodeMcpHandler } from './lib/mcp.js';
 
 const PUBLIC = new URL('./public', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
 const MIME = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.json': 'application/json', '.svg': 'image/svg+xml' };
@@ -27,6 +26,16 @@ const env = Object.fromEntries(
 // process env wins (lets the smoke harness inject a test token without touching .env)
 const MCP_TOKEN = process.env.MCP_TOKEN ?? (env.MCP_TOKEN || '');
 const MUTATING_MCP = new Set(['trailhead_create_order', 'trailhead_refund_order']); // §0.3: bearer-gated
+
+// P2 config injection: build this runtime's clients from .env and wire them
+// through the same lib/ code path the Worker uses (worker.mjs passes bindings).
+const catalog = JSON.parse(readFileSync(new URL('./data/catalog.json', import.meta.url), 'utf8'));
+const paypal = createPaypal(env);
+const llm = createLlm(env);
+const store = createStore();
+const agent = createAgent({ catalog, paypal, llm, store });
+const handleMcp = createNodeMcpHandler({ agent, paypal });
+const { agentTurn, orders, hydrateOrders } = agent;
 
 // ---- per-session chat state (replaces the process-global history array) ----
 // Sessions survive a restart (P1): turns write through to the store seam and
